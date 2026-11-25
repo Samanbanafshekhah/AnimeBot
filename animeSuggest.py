@@ -32,7 +32,11 @@ logger = logging.getLogger(__name__)
 TEXT = {
     "fa": {
         "welcome": "سلام! 👋\nاز بین انیمه‌های برترِ ترند، یه پیشنهاد برات پیدا می‌کنم.\nاگه قبلاً دیدیش، «دیدم» رو بزن تا پیشنهاد بعدی بیاد.",
-        "suggest": "🎲 چی ببینم؟", "language": "🌐 تغییر زبان", "seen": "✅ دیدم", "unseen": "🍿 ندیدم",
+        "suggest": "🎲 چی ببینم؟", "language": "🌐 تغییر زبان", "seen": "✅ دیدم", "unseen": "🍿 بعداً می‌بینم",
+        "watchlist": "📋 لیست تماشای من", "watchlist_empty": "هنوز چیزی برای بعداً ذخیره نکردی. زیر پیشنهادها «🍿 بعداً می‌بینم» رو بزن.",
+        "watchlist_heading": "📋 لیست تماشای من — صفحهٔ {page} از {pages}",
+        "remove": "🗑 حذف", "previous_page": "⬅️ قبلی", "next_page": "بعدی ➡️",
+        "saved": "🍿 به لیست تماشات اضافه شد.", "missing_saved": "این مورد دیگر در لیست تماشات نیست.",
         "next": "🎲 پیشنهاد بعدی", "loading": "🎬 دارم پیشنهادت رو با عکس و خلاصهٔ فارسی آماده می‌کنم…",
         "related": "🔎 انیمه‌های مرتبط", "related_more": "🔎 موارد مرتبط بیشتر",
         "related_loading": "🔎 دارم انیمه‌های مرتبط رو با عکس و توضیحات آماده می‌کنم…",
@@ -41,7 +45,6 @@ TEXT = {
         "related_partial": "بعضی پیشنهادهای مرتبط آماده نشدن؛ برای ادامه یا تلاش دوباره دکمهٔ زیر رو بزن.",
         "same_series": "🧩 از همین مجموعه", "similar_anime": "✨ انیمهٔ مشابه",
         "busy": "یه لحظه؛ دارم پیشنهادت رو آماده می‌کنم…", "stale": "این پیشنهاد دیگه فعال نیست؛ یه پیشنهاد تازه بگیر.",
-        "picked": "🍿 پس این رو بذار برای تماشا!\nهر وقت خواستی، می‌تونی پیشنهاد بعدی رو بگیری.",
         "empty": "همهٔ انیمه‌های برترِ این فهرست رو دیدی! بعداً برای فهرست تازه برگرد.",
         "unavailable": "دریافت پیشنهاد فعلاً ممکن نشد. اتصال اینترنت و Xray رو بررسی کن و دوباره تلاش کن.",
         "translation_failed": "ترجمهٔ فارسی این خلاصه فعلاً آماده نشد. دوباره تلاش کن؛ متن انگلیسی جایگزین نمی‌شه.",
@@ -51,11 +54,15 @@ TEXT = {
         "at_least": "حداقل {count}؛ اطلاعات کامل نیست", "no_synopsis": "هنوز خلاصه‌ای برای این انیمه منتشر نشده است.",
         "title_unknown": "عنوان نامشخص",
         "season_synopsis_pending": "این انیمه ادامهٔ مجموعه است؛ خلاصهٔ کامل داستان این فصل هنوز منتشر نشده است.",
-        "help": "🎲 پیشنهاد تصادفی از انیمه‌های برترِ ترند\n✅ دیدم: پیشنهاد بعدی\n🍿 ندیدم: انتخاب برای تماشا\n/language تغییر زبان\n/start شروع دوباره\n\nتعداد قسمت مربوط به فصل پیشنهادی است؛ فصل‌ها از بخش‌های تلویزیونی مرتبط شمرده می‌شوند.",
+        "help": "🎲 پیشنهاد تصادفی از انیمه‌های برترِ ترند\n✅ دیدم: پیشنهاد بعدی\n🍿 بعداً می‌بینم: ذخیره در لیست تماشا\n/watchlist لیست تماشا؛ حذف یا ثبت به‌عنوان دیده‌شده\n/language تغییر زبان\n/start شروع دوباره\n\nتعداد قسمت مربوط به فصل پیشنهادی است؛ فصل‌ها از بخش‌های تلویزیونی مرتبط شمرده می‌شوند.",
     },
     "en": {
         "welcome": "Hi! 👋\nI'll pick a random anime from the highest-rated trending shows.\nAlready watched it? Tap ‘Seen’ for another suggestion.",
-        "suggest": "🎲 What should I watch?", "language": "🌐 Change language", "seen": "✅ Seen", "unseen": "🍿 Haven’t seen it",
+        "suggest": "🎲 What should I watch?", "language": "🌐 Change language", "seen": "✅ Seen", "unseen": "🍿 Watch later",
+        "watchlist": "📋 My watchlist", "watchlist_empty": "Your watchlist is empty. Tap ‘🍿 Watch later’ below a recommendation to save it.",
+        "watchlist_heading": "📋 My watchlist — page {page} of {pages}",
+        "remove": "🗑 Remove", "previous_page": "⬅️ Previous", "next_page": "Next ➡️",
+        "saved": "🍿 Added to your watchlist.", "missing_saved": "This item is no longer in your watchlist.",
         "next": "🎲 Next suggestion", "loading": "🎬 Finding your anime, cover and synopsis…",
         "related": "🔎 Related anime", "related_more": "🔎 More related anime",
         "related_loading": "🔎 Finding related anime, covers and synopses…",
@@ -64,7 +71,6 @@ TEXT = {
         "related_partial": "Some related picks couldn't be prepared. Tap below to continue or try again.",
         "same_series": "🧩 From the same series", "similar_anime": "✨ Similar anime",
         "busy": "One moment; your suggestion is on its way…", "stale": "This suggestion is no longer active. Get a new one.",
-        "picked": "🍿 Save this one for your next watch!\nYou can ask for another suggestion whenever you like.",
         "empty": "You've watched every top anime in this list! Come back later for a refreshed list.",
         "unavailable": "Couldn't load a suggestion. Check your internet connection and Xray, then try again.",
         "translation_failed": "The translated synopsis is temporarily unavailable. Please try again.",
@@ -74,7 +80,7 @@ TEXT = {
         "at_least": "At least {count}; incomplete data", "no_synopsis": "No synopsis has been published for this anime yet.",
         "title_unknown": "Unknown title",
         "season_synopsis_pending": "This is a continuation of the series. A full plot synopsis for this season has not been published yet.",
-        "help": "🎲 Random picks from the highest-rated trending anime\n✅ Seen: get another suggestion\n🍿 Haven’t seen it: keep this pick\n/language change language\n/start start again\n\nEpisode counts apply to the suggested season. Seasons count related TV parts, including split seasons.",
+        "help": "🎲 Random picks from the highest-rated trending anime\n✅ Seen: get another suggestion\n🍿 Watch later: save to your watchlist\n/watchlist view, remove or mark saved anime as watched\n/language change language\n/start start again\n\nEpisode counts apply to the suggested season. Seasons count related TV parts, including split seasons.",
     },
 }
 
@@ -97,6 +103,11 @@ class Store:
                 user_id INTEGER NOT NULL, anime_id INTEGER NOT NULL, status TEXT NOT NULL,
                 PRIMARY KEY (user_id, anime_id));
             CREATE TABLE IF NOT EXISTS translations (source_hash TEXT PRIMARY KEY, text TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS anime_titles (
+                anime_id INTEGER PRIMARY KEY, title TEXT NOT NULL, english_title TEXT);
+            CREATE TABLE IF NOT EXISTS watchlist (
+                user_id INTEGER NOT NULL, anime_id INTEGER NOT NULL,
+                saved_at INTEGER NOT NULL DEFAULT (unixepoch()), PRIMARY KEY (user_id, anime_id));
         """)
 
     def load_user(self, user_id):
@@ -115,6 +126,33 @@ class Store:
             self.db.execute("INSERT INTO history VALUES (?,?,?) ON CONFLICT(user_id,anime_id) "
                             "DO UPDATE SET status=CASE WHEN history.status='seen' THEN 'seen' ELSE excluded.status END",
                             (user_id, anime_id, status))
+            if status == "seen":
+                self.db.execute("DELETE FROM watchlist WHERE user_id=? AND anime_id=?", (user_id, anime_id))
+
+    def remember_anime(self, anime):
+        with self.db:
+            self.db.execute("INSERT OR REPLACE INTO anime_titles VALUES (?,?,?)",
+                            (anime["id"], anime.get("title") or str(anime["id"]), anime.get("english_title")))
+
+    def save_for_later(self, user_id, anime_id):
+        with self.db:
+            self.db.execute("INSERT OR IGNORE INTO watchlist (user_id,anime_id) "
+                            "SELECT ?,anime_id FROM anime_titles WHERE anime_id=? "
+                            "AND NOT EXISTS (SELECT 1 FROM history WHERE user_id=? AND anime_id=? AND status='seen')",
+                            (user_id, anime_id, user_id, anime_id))
+        return self.db.execute("SELECT 1 FROM watchlist WHERE user_id=? AND anime_id=?", (user_id, anime_id)).fetchone() is not None
+
+    def saved_anime(self, user_id):
+        return self.db.execute("SELECT w.anime_id,a.title,a.english_title FROM watchlist w "
+                               "JOIN anime_titles a ON a.anime_id=w.anime_id WHERE w.user_id=? "
+                               "ORDER BY w.saved_at DESC,w.rowid DESC", (user_id,)).fetchall()
+
+    def remove_saved(self, user_id, anime_id, seen=False):
+        with self.db:
+            removed = self.db.execute("DELETE FROM watchlist WHERE user_id=? AND anime_id=?", (user_id, anime_id)).rowcount
+            if removed and seen:
+                self.record(user_id, anime_id, "seen")
+        return bool(removed)
 
     def reset_shown(self, user_id):
         with self.db:
@@ -158,7 +196,8 @@ def locale(state):
 
 
 def menu(language):
-    return ReplyKeyboardMarkup([[TEXT[language]["suggest"]], [TEXT[language]["language"]]], resize_keyboard=True)
+    return ReplyKeyboardMarkup([[TEXT[language]["suggest"]], [TEXT[language]["watchlist"]],
+                                [TEXT[language]["language"]]], resize_keyboard=True)
 
 
 def language_keyboard():
@@ -524,6 +563,7 @@ async def deliver_anime(update, context, session, anime, language, related=False
         state["active_suggestion"] = card
         state.pop("retry_anime", None)
     get_store().record(update.effective_user.id, anime["id"], "shown")
+    get_store().remember_anime(anime)
     if sent.photo:
         _photo_ids[anime["id"]] = sent.photo[-1].file_id
     logger.info("Suggestion delivered: anime=%s language=%s related=%s", anime["id"], language, related)
@@ -669,6 +709,9 @@ async def handle_feedback(update, context):
         state.pop("active_suggestion", None)
     state.get("related_cards", {}).pop(active, None)
     try:
+        if action == "unseen" and not get_store().save_for_later(update.effective_user.id, anime_id):
+            await query.answer(words["stale"])
+            return
         await query.answer()
         await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup([[
             InlineKeyboardButton(words["related"], callback_data=f"related:{anime_id}")
@@ -679,9 +722,64 @@ async def handle_feedback(update, context):
         if action in {"seen", "next"}:
             await suggest_anime(update, context)
         else:
-            await query.message.reply_text(words["picked"], reply_markup=menu(language))
+            await query.message.reply_text(words["saved"], reply_markup=menu(language))
     finally:
         state["feedback_busy"] = False
+
+
+def watchlist_page(user_id, language, page=0):
+    words = TEXT[language]
+    items = get_store().saved_anime(user_id)
+    if not items:
+        return words["watchlist_empty"], InlineKeyboardMarkup([])
+    pages = (len(items) + 7) // 8
+    page = max(0, min(page, pages - 1))
+    lines = [words["watchlist_heading"].format(page=page + 1, pages=pages)]
+    buttons = []
+    for number, (anime_id, title, english_title) in enumerate(items[page * 8:page * 8 + 8], start=page * 8 + 1):
+        title = (english_title if language == "en" else None) or title
+        lines.append(f"{number}. {truncate(clean_text(title), 140)}")
+        buttons.append([
+            InlineKeyboardButton(f"{number} · {words['seen']}", callback_data=f"wl:seen:{anime_id}:{page}"),
+            InlineKeyboardButton(f"{number} · {words['remove']}", callback_data=f"wl:remove:{anime_id}:{page}"),
+        ])
+    navigation = []
+    if page:
+        navigation.append(InlineKeyboardButton(words["previous_page"], callback_data=f"wl:page:{page - 1}"))
+    if page + 1 < pages:
+        navigation.append(InlineKeyboardButton(words["next_page"], callback_data=f"wl:page:{page + 1}"))
+    if navigation:
+        buttons.append(navigation)
+    return "\n\n".join(lines), InlineKeyboardMarkup(buttons)
+
+
+async def show_watchlist(update, context):
+    state = state_for(update, context)
+    if state.get("language") not in TEXT:
+        await choose_language(update.effective_message)
+        return
+    text, markup = watchlist_page(update.effective_user.id, locale(state))
+    await update.effective_message.reply_text(text, reply_markup=markup, parse_mode=None)
+
+
+async def handle_watchlist(update, context):
+    state = state_for(update, context)
+    query = update.callback_query
+    parts = query.data.split(":")
+    page = int(parts[-1])
+    removed = True
+    if parts[1] in {"seen", "remove"}:
+        anime_id = int(parts[2])
+        removed = get_store().remove_saved(update.effective_user.id, anime_id, seen=parts[1] == "seen")
+        if removed and parts[1] == "seen":
+            state["seen_anime"].add(anime_id)
+    await query.answer(None if removed else TEXT[locale(state)]["missing_saved"])
+    text, markup = watchlist_page(update.effective_user.id, locale(state), page)
+    try:
+        await query.edit_message_text(text, reply_markup=markup, parse_mode=None)
+    except BadRequest as error:
+        if "message is not modified" not in str(error).lower():
+            raise
 
 
 async def help_command(update, context):
@@ -699,6 +797,8 @@ async def handle_text(update, context):
         await choose_language(update.effective_message)
     elif text in {TEXT["fa"]["suggest"], TEXT["en"]["suggest"], "چی ببینم", "چی ببینم؟", "چی ببینم?", "What should I watch?"}:
         await suggest_anime(update, context)
+    elif text in {TEXT["fa"]["watchlist"], TEXT["en"]["watchlist"]}:
+        await show_watchlist(update, context)
     else:
         await help_command(update, context)
 
@@ -734,6 +834,8 @@ def build_application():
     app.add_handler(CommandHandler("language", language_command))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("suggest", suggest_anime))
+    app.add_handler(CommandHandler("watchlist", show_watchlist))
+    app.add_handler(CallbackQueryHandler(handle_watchlist, pattern=r"^wl:(?:page:\d+|(?:seen|remove):\d+:\d+)$"))
     app.add_handler(CallbackQueryHandler(set_language, pattern=r"^lang:(fa|en)$"))
     app.add_handler(CallbackQueryHandler(show_related, pattern=r"^related(?:more)?:\d+$"))
     app.add_handler(CallbackQueryHandler(handle_feedback, pattern=r"^(?:(seen|unseen|next):\d+|retry)$"))

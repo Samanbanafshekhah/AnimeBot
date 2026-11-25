@@ -532,7 +532,82 @@ class RelatedTests(BotCase):
         self.assertEqual(state["related_shown"][(100, 2)], {7})
 
 
+class WatchlistTests(BotCase):
+    async def test_save_card_and_open_list_after_context_reset(self):
+        self.language()
+        with self.network(pool=[anime(1)]):
+            await bot.suggest_anime(self.update, self.context)
+        self.feedback("unseen", 1)
+        await bot.handle_feedback(self.update, self.context)
+        self.assertEqual(self.store.saved_anime(1), [(1, "Anime 1", "English 1")])
+        self.context.user_data.clear()
+        await bot.show_watchlist(self.update, self.context)
+        self.assertIn("Anime 1", self.message.reply_text.call_args.args[0])
+        self.assertNotIn(1, self.store.load_user(1)["seen_anime"])
+
+    async def test_watchlist_seen_persists_and_remove_does_not_mark_seen(self):
+        self.language()
+        for item in (anime(1), anime(2)):
+            self.store.remember_anime(item)
+            self.store.save_for_later(1, item["id"])
+        query = self.feedback("wl:seen", "1:0")
+        query.edit_message_text = AsyncMock()
+        await bot.handle_watchlist(self.update, self.context)
+        self.assertIn(1, self.store.load_user(1)["seen_anime"])
+        self.assertIn(1, self.context.user_data["seen_anime"])
+        query.data = "wl:remove:2:0"
+        await bot.handle_watchlist(self.update, self.context)
+        self.assertEqual(self.store.saved_anime(1), [])
+        self.assertNotIn(2, self.store.load_user(1)["seen_anime"])
+        self.assertIn("هنوز چیزی", query.edit_message_text.call_args.args[0])
+
+    async def test_callback_cannot_modify_another_users_saved_item(self):
+        self.store.remember_anime(anime(1))
+        self.store.save_for_later(2, 1)
+        query = self.feedback("wl:seen", "1:0")
+        query.edit_message_text = AsyncMock()
+        await bot.handle_watchlist(self.update, self.context)
+        self.assertEqual(len(self.store.saved_anime(2)), 1)
+        self.assertEqual(self.store.load_user(1)["seen_anime"], set())
+
+    async def test_pagination_localization_and_clamp_after_removal(self):
+        for number in range(1, 10):
+            self.store.remember_anime(anime(number))
+            self.store.save_for_later(1, number)
+        text, markup = bot.watchlist_page(1, "en")
+        self.assertIn("page 1 of 2", text)
+        self.assertIn("English 9", text)
+        self.assertEqual(markup.inline_keyboard[-1][0].callback_data, "wl:page:1")
+        self.store.remove_saved(1, 1)
+        text, _ = bot.watchlist_page(1, "fa", 1)
+        self.assertIn("صفحهٔ 1 از 1", text)
+
+    async def test_watchlist_menu_routes_and_empty_list_is_localized(self):
+        self.language("en")
+        self.message.text = bot.TEXT["en"]["watchlist"]
+        await bot.handle_text(self.update, self.context)
+        self.assertIn("Your watchlist is empty", self.message.reply_text.call_args.args[0])
+
+
 class PersistenceTests(unittest.TestCase):
+    def test_watchlist_survives_restart_deduplicates_and_keeps_users_separate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "test.sqlite3"
+            store = bot.Store(path)
+            store.remember_anime(anime(1))
+            store.save_for_later(1, 1)
+            store.save_for_later(1, 1)
+            store.reset_shown(1)
+            store.db.close()
+            store = bot.Store(path)
+            self.assertEqual(store.saved_anime(1), [(1, "Anime 1", "English 1")])
+            self.assertEqual(store.saved_anime(2), [])
+            store.record(1, 1, "seen")
+            self.assertEqual(store.saved_anime(1), [])
+            self.assertFalse(store.save_for_later(1, 1))
+            self.assertFalse(store.save_for_later(1, 999))
+            store.db.close()
+
     def test_store_survives_reopen_and_separates_users(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "test.sqlite3"
