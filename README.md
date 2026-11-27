@@ -2,6 +2,46 @@
 
 بات پیشنهاد انیمه با دو زبان فارسی و انگلیسی، پوستر واقعی و توضیحات زیر عکس.
 
+## قابلیت‌های جدید / Discovery features
+
+- `/genre` — یک ژانر انتخاب کنید تا همان لحظه یک پیشنهاد تصادفی بگیرید. «پیشنهاد بعدی» در همان ژانر می‌ماند. Your saved genre stays the same, and your rating and episode filters still apply.
+
+- `/search Naruto` — جستجوی عنوان؛ یا اسم انیمه را مستقیم بفرستید. نتایج صفحه‌بندی دارند و با زدن هر عنوان، پوستر و توضیحات نمایش داده می‌شود. جستجو فیلم و ویژه‌برنامه را هم شامل می‌شود. Use English titles or Japanese romanization.
+- `/top` — انیمه‌های تلویزیونی با بالاترین امتیاز، با صفحه‌بندی.
+- `/airing` — انیمه‌های تلویزیونی در حال پخش، به ترتیب ترند.
+- `/settings` — ذخیرهٔ ژانر، حداقل امتیاز و حداکثر تعداد قسمت برای هر کاربر. این تنظیمات روی پیشنهاد تصادفی، برترین‌ها و در حال پخش اعمال می‌شوند؛ جستجوی عنوان مستقل است. عنوان‌هایی که تعداد قسمت یا امتیازشان مشخص نیست ممکن است با فیلتر عددی حذف شوند.
+- `/history` — فهرست دیده‌شده‌ها با امکان لغو ثبت اشتباه. لغو، عنوان را به لیست تماشا برنمی‌گرداند.
+- `/stats` — تعداد دیده‌شده‌ها، لیست تماشا و عنوان‌های کشف‌شده.
+- `/export` — دانلود لیست تماشا، دیده‌شده‌ها و تنظیمات خودتان به شکل JSON؛ فایل توکن یا اطلاعات دیگران را ندارد. This is a personal export; importing is not implemented.
+- `/cancel` — خروج از حالت جستجو. منوی اصلی فارسی/انگلیسی و منوی دستورات تلگرام هم به‌روز شده‌اند.
+
+Search and related-result cards have independent watchlist buttons. Watched titles are marked ✅ in search/browse results. Interactive discovery controls expire after a bot restart; rerun the command to get fresh buttons. Saved lists, history, language and preferences remain in SQLite.
+
+API fields and filters follow the [official AniList query reference](https://docs.anilist.co/reference/query).
+
+## Windows local setup
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+Save `TELEGRAM_BOT_TOKEN=...` in `.env`. If needed, put `TELEGRAM_PROXY_URL=http://127.0.0.1:10808` in `run.env`; the local proxy must be running. Both files are ignored by Git.
+
+Double-click `start-bot.cmd` to run in the background or `stop-bot.cmd` to stop it. These scripts check this project's full script path to avoid starting duplicate instances or stopping unrelated Python programs. For status:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\bot.ps1 status
+```
+
+Logs are in `bot.stderr.log` and `bot.stdout.log`. The computer must stay awake and connected. The scripts do not configure startup at Windows sign-in. Send `/help` to refresh an existing Telegram keyboard.
+
+Run all offline tests:
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -q
+```
+
 ## اجرا
 
 ```bash

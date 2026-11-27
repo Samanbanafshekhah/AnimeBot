@@ -2,10 +2,12 @@
 import asyncio
 import hashlib
 import html
+import json
 import logging
 import os
 import random
 import re
+import secrets
 import sqlite3
 import time
 from dataclasses import dataclass
@@ -14,7 +16,7 @@ from pathlib import Path
 import aiohttp
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputFile, ReplyKeyboardMarkup, Update
+from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, ReplyKeyboardMarkup, Update
 from telegram.error import BadRequest, TelegramError
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
@@ -85,6 +87,52 @@ TEXT = {
 }
 
 
+TEXT["en"].update({
+    "search": "🔎 Search anime", "top": "🏆 Top rated", "airing": "📡 Airing now",
+    "genre_pick": "🎭 Pick a genre", "genre_prompt": "Choose a genre for a random recommendation.",
+    "genre_empty": "No more unwatched picks in {genre} match your filters. Try another genre or adjust /settings.",
+    "settings": "⚙️ Preferences", "history": "✅ Watched history", "stats": "📊 My stats",
+    "search_prompt": "Send an anime title (English or Japanese romanization). /cancel to exit search.",
+    "search_short": "Please enter 2–100 characters.", "cancelled": "Search cancelled.",
+    "results": "🔎 {title} · page {page}\nTap a title for its poster and details.",
+    "no_results": "No titles found. Try a different title or loosen your preferences.",
+    "discover_loading": "🔎 Looking up anime…", "open": "🎬 Details", "undo": "↩️ Undo watched",
+    "history_empty": "No watched anime yet. Tap Seen on an anime card to add one.",
+    "history_heading": "✅ Watched anime · page {page} of {pages}",
+    "preferences": "⚙️ Recommendation preferences\n\nGenre: {genre}\nMinimum rating: {score}\nMaximum episodes: {episodes}\n\nApplies to random picks, top rated and airing lists. Search includes all formats and ignores these filters.",
+    "any": "Any", "genre": "Genre", "rating": "Minimum rating", "length": "Maximum episodes",
+    "reset": "Reset filters", "done": "Done", "genres": "Genres", "year": "Year",
+    "profile": "📊 Your anime stats\n\n✅ Watched: {seen}\n🍿 Watchlist: {saved}\n🎬 Discovered: {shown}\n\n/export downloads your lists and preferences.",
+    "export_caption": "Your anime lists and preferences. Keep this file as a personal backup.",
+})
+TEXT["fa"].update({
+    "search": "🔎 جستجوی انیمه", "top": "🏆 برترین‌ها", "airing": "📡 در حال پخش",
+    "genre_pick": "🎭 انتخاب ژانر", "genre_prompt": "یه ژانر انتخاب کن تا یه انیمهٔ تصادفی پیشنهاد بدم.",
+    "genre_empty": "در ژانر {genre} پیشنهاد تازه‌ای با این فیلترها پیدا نشد. ژانر دیگری انتخاب کن یا /settings رو تغییر بده.",
+    "settings": "⚙️ سلیقهٔ من", "history": "✅ انیمه‌های دیده‌شده", "stats": "📊 آمار من",
+    "search_prompt": "اسم انیمه رو به انگلیسی یا ژاپنی با حروف لاتین بفرست. برای خروج /cancel رو بزن.",
+    "search_short": "لطفاً بین ۲ تا ۱۰۰ حرف بنویس.", "cancelled": "جستجو لغو شد.",
+    "results": "🔎 {title} · صفحهٔ {page}\nبرای دیدن پوستر و توضیحات، عنوان رو بزن.",
+    "no_results": "چیزی پیدا نشد. اسم دیگری امتحان کن یا فیلترهای سلیقه رو کمتر کن.",
+    "discover_loading": "🔎 دارم انیمه‌ها رو پیدا می‌کنم…", "open": "🎬 جزئیات", "undo": "↩️ لغو دیده‌شده",
+    "history_empty": "هنوز انیمه‌ای رو دیده‌شده ثبت نکردی. زیر کارت انیمه «دیدم» رو بزن.",
+    "history_heading": "✅ انیمه‌های دیده‌شده · صفحهٔ {page} از {pages}",
+    "preferences": "⚙️ سلیقهٔ پیشنهادها\n\nژانر: {genre}\nحداقل امتیاز: {score}\nحداکثر قسمت: {episodes}\n\nاین فیلترها روی پیشنهاد تصادفی، برترین‌ها و در حال پخش اعمال می‌شن. جستجو همهٔ قالب‌ها رو شامل می‌شه و از این فیلترها استفاده نمی‌کنه.",
+    "any": "همه", "genre": "ژانر", "rating": "حداقل امتیاز", "length": "حداکثر قسمت",
+    "reset": "پاک‌کردن فیلترها", "done": "تمام", "genres": "ژانرها", "year": "سال",
+    "profile": "📊 آمار انیمه‌های تو\n\n✅ دیده‌شده: {seen}\n🍿 لیست تماشا: {saved}\n🎬 کشف‌شده: {shown}\n\nبرای دانلود لیست‌ها و سلیقه‌ات /export رو بزن.",
+    "export_caption": "لیست‌ها و سلیقهٔ انیمهٔ تو؛ این فایل رو برای پشتیبان نگه دار.",
+})
+for language in TEXT:
+    TEXT[language]["help"] += ("\n\n/genre · /search Naruto · /top · /airing\n/settings · /history · /stats · /export · /cancel")
+
+# AniList genre names are API values; Persian labels are only for display.
+GENRES = {"Action": "اکشن", "Adventure": "ماجراجویی", "Comedy": "کمدی", "Drama": "درام",
+          "Fantasy": "فانتزی", "Horror": "ترسناک", "Mystery": "معمایی", "Psychological": "روان‌شناختی",
+          "Romance": "عاشقانه", "Sci-Fi": "علمی‌تخیلی", "Slice of Life": "روزمره", "Sports": "ورزشی",
+          "Supernatural": "ماورایی", "Thriller": "هیجانی", "Music": "موسیقی", "Mecha": "مکا"}
+
+
 class TranslationUnavailable(Exception):
     pass
 
@@ -108,6 +156,9 @@ class Store:
             CREATE TABLE IF NOT EXISTS watchlist (
                 user_id INTEGER NOT NULL, anime_id INTEGER NOT NULL,
                 saved_at INTEGER NOT NULL DEFAULT (unixepoch()), PRIMARY KEY (user_id, anime_id));
+            CREATE TABLE IF NOT EXISTS preferences (
+                user_id INTEGER PRIMARY KEY, genre TEXT, min_score INTEGER NOT NULL DEFAULT 0,
+                max_episodes INTEGER NOT NULL DEFAULT 0);
         """)
 
     def load_user(self, user_id):
@@ -166,6 +217,27 @@ class Store:
         with self.db:
             self.db.execute("INSERT OR REPLACE INTO translations VALUES (?,?)", (source_hash, text))
 
+    def preferences(self, user_id):
+        row = self.db.execute("SELECT genre,min_score,max_episodes FROM preferences WHERE user_id=?", (user_id,)).fetchone()
+        return dict(zip(("genre", "min_score", "max_episodes"), row or (None, 0, 0)))
+
+    def set_preference(self, user_id, field, value):
+        if field not in {"genre", "min_score", "max_episodes"}:
+            raise ValueError("Unknown preference")
+        with self.db:
+            self.db.execute("INSERT OR IGNORE INTO preferences(user_id) VALUES (?)", (user_id,))
+            self.db.execute(f"UPDATE preferences SET {field}=? WHERE user_id=?", (value, user_id))
+
+    def watched(self, user_id):
+        return self.db.execute("SELECT h.anime_id,a.title,a.english_title FROM history h "
+                               "LEFT JOIN anime_titles a ON a.anime_id=h.anime_id "
+                               "WHERE h.user_id=? AND h.status='seen' ORDER BY h.anime_id DESC", (user_id,)).fetchall()
+
+    def undo_seen(self, user_id, anime_id):
+        with self.db:
+            return bool(self.db.execute("UPDATE history SET status='shown' WHERE user_id=? AND anime_id=? AND status='seen'",
+                                        (user_id, anime_id)).rowcount)
+
 
 _store = None
 _cache = {}
@@ -196,8 +268,10 @@ def locale(state):
 
 
 def menu(language):
-    return ReplyKeyboardMarkup([[TEXT[language]["suggest"]], [TEXT[language]["watchlist"]],
-                                [TEXT[language]["language"]]], resize_keyboard=True)
+    w = TEXT[language]
+    return ReplyKeyboardMarkup([[w["suggest"], w["search"]], [w["top"], w["airing"]],
+                                [w["watchlist"], w["history"]], [w["settings"], w["stats"]],
+                                [w["genre_pick"], w["language"]]], resize_keyboard=True)
 
 
 def language_keyboard():
@@ -212,7 +286,7 @@ async def choose_language(message):
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    state_for(update, context)
+    state_for(update, context).pop("awaiting_search", None)
     await choose_language(update.effective_message)
 
 
@@ -228,8 +302,12 @@ async def set_language(update, context):
         return
     state["language"] = language
     state.pop("active_suggestion", None)
+    state.pop("active_genre", None)
+    state.pop("genre_retry", None)
     state.pop("retry_anime", None)
     for key in ("related_cards", "related_origins", "related_controls", "related_shown"):
+        state.pop(key, None)
+    for key in ("catalogs", "awaiting_search", "settings_controls", "history_controls"):
         state.pop(key, None)
     get_store().language(update.effective_user.id, language)
     await query.answer()
@@ -246,7 +324,9 @@ def proxy_url():
 
 async def anilist_query(session, query, **variables):
     global _last_request
-    key = (query, tuple(sorted(variables.items())))
+    # AniList treats explicit null filters differently from omitted filters; some return HTTP 500.
+    variables = {name: value for name, value in variables.items() if value is not None}
+    key = (query, json.dumps(variables, sort_keys=True))
     async with _request_lock:
         cached = _cache.get(key)
         if cached and time.monotonic() - cached[0] < 900:
@@ -264,6 +344,9 @@ async def anilist_query(session, query, **variables):
                     payload = await response.json()
                     if payload.get("errors") or not payload.get("data"):
                         raise ValueError("AniList returned no usable data")
+                    if len(_cache) >= 512:
+                        for old_key in list(_cache)[:128]:
+                            _cache.pop(old_key, None)
                     _cache[key] = (time.monotonic(), payload["data"])
                     return payload["data"]
             except (aiohttp.ClientError, asyncio.TimeoutError):
@@ -288,6 +371,7 @@ def normalize_anime(item):
         "english_title": title.get("english"), "score": item["averageScore"] / 10 if item.get("averageScore") else None,
         "episodes": item.get("episodes"), "synopsis": clean_text(item.get("description")),
         "cover": image, "relations": item.get("relations") or {},
+        "genres": item.get("genres") or [], "year": item.get("seasonYear"), "format": item.get("format"),
     }
 
 
@@ -295,7 +379,7 @@ async def fetch_anime_data(session):
     payload = await anilist_query(session, """
         { Page(perPage:50) {
             media(type:ANIME, format:TV, sort:TRENDING_DESC, isAdult:false) {
-                id title { romaji english } averageScore episodes description(asHtml:false)
+                id title { romaji english } averageScore episodes genres seasonYear format description(asHtml:false)
                 coverImage { extraLarge large }
                 relations { edges { relationType node { id type format } } }
             }
@@ -307,6 +391,33 @@ async def fetch_anime_data(session):
         if normalized and normalized["score"] is not None:
             candidates[item["id"]] = normalized
     return sorted(candidates.values(), key=lambda item: item["score"], reverse=True)[:25]
+
+
+async def fetch_catalog(session, mode="top", search=None, page=1, preferences=None, per_page=6):
+    preferences = preferences or {}
+    payload = await anilist_query(session, """
+        query ($search:String,$page:Int!,$size:Int!,$sort:[MediaSort],$status:MediaStatus,
+               $genre:String,$score:Int,$episodes:Int,$formats:[MediaFormat]) {
+            Page(page:$page,perPage:$size) {
+                pageInfo { hasNextPage }
+                media(type:ANIME,isAdult:false,search:$search,sort:$sort,status:$status,
+                      genre:$genre,averageScore_greater:$score,episodes_lesser:$episodes,format_in:$formats) {
+                    id title { romaji english } averageScore episodes genres seasonYear format
+                    description(asHtml:false) coverImage { extraLarge large }
+                    relations { edges { relationType node { id type format } } }
+                }
+            }
+        }
+    """, search=search, page=page, size=per_page,
+        sort=None if search else ["SCORE_DESC" if mode == "top" else "TRENDING_DESC"],
+        status="RELEASING" if mode == "airing" else None,
+        genre=preferences.get("genre") if not search else None,
+        score=preferences["min_score"] - 1 if not search and preferences.get("min_score") else None,
+        episodes=preferences["max_episodes"] + 1 if not search and preferences.get("max_episodes") else None,
+        formats=None if search else ["TV", "TV_SHORT"])
+    data = payload["Page"]
+    items = [anime for item in data["media"] if (anime := normalize_anime(item))]
+    return items, bool(data["pageInfo"]["hasNextPage"])
 
 
 async def fetch_related_anime(session, anime_id):
@@ -322,7 +433,7 @@ async def fetch_related_anime(session, anime_id):
             }
         }
         fragment RelatedCard on Media {
-            id type format isAdult title { romaji english } averageScore episodes description(asHtml:false)
+            id type format isAdult title { romaji english } averageScore episodes genres seasonYear description(asHtml:false)
             coverImage { extraLarge large }
             relations { edges { relationType node { id type format } } }
         }
@@ -360,8 +471,8 @@ async def count_seasons(session, anime):
     cached = _cache.get(cache_key)
     if cached and time.monotonic() - cached[0] < (3600 if cached[1].complete else 120):
         return cached[1]
-    pending = [(anime["id"], "TV")]
-    discovered = {anime["id"]: "TV"}
+    pending = [(anime["id"], anime.get("format") or "TV")]
+    discovered = {anime["id"]: anime.get("format") or "TV"}
     visited = set()
     complete = True
     deadline = time.monotonic() + 8
@@ -501,6 +612,18 @@ def format_suggestion(anime, synopsis, seasons, language):
     header = (f"🎬 {truncate(clean_text(title), 140)}\n\n"
               f"⭐ {words['score']}: {score}\n📺 {words['episodes']}: {episodes}\n"
               f"🗂 {words['seasons']}: {season_text}\n\n📖 {words['synopsis']}\n")
+    details = []
+    if anime.get("year"):
+        details.append(f"{words['year']}: {anime['year']}")
+    if anime.get("genres"):
+        genres = [GENRES.get(g, g) if language == "fa" else g for g in anime["genres"][:3]]
+        details.append(f"{words['genres']}: {', '.join(genres)}")
+    if details:
+        header = header.replace(f"\n\n📖 {words['synopsis']}", "\n" + " · ".join(details) + f"\n\n📖 {words['synopsis']}")
+    if anime.get("format") not in {None, "TV", "TV_SHORT"}:
+        formats = {"MOVIE": "فیلم", "OVA": "اُوی‌اِی", "ONA": "اینترنتی", "SPECIAL": "ویژه", "MUSIC": "موزیک‌ویدیو"}
+        label = formats.get(anime["format"], anime["format"]) if language == "fa" else anime["format"].replace("_", " ").title()
+        header = header.replace(f"🗂 {words['seasons']}: {season_text}", f"🎞 {label}")
     if anime.get("related_kind") in {"same_series", "similar_anime"}:
         header = words[anime["related_kind"]] + "\n" + header
     remaining = 1024 - len(header.encode("utf-16-le")) // 2
@@ -570,7 +693,45 @@ async def deliver_anime(update, context, session, anime, language, related=False
     return sent
 
 
-async def suggest_anime(update, context):
+async def genre_command(update, context):
+    state = state_for(update, context)
+    message = update.effective_message
+    if state.get("language") not in TEXT:
+        await choose_language(message)
+        return
+    state.pop("awaiting_search", None)
+    language = locale(state)
+    buttons = [
+        InlineKeyboardButton(GENRES[genre] if language == "fa" else genre, callback_data=f"genre:{index}")
+        for index, genre in enumerate(GENRES)
+    ]
+    await message.reply_text(TEXT[language]["genre_prompt"], reply_markup=InlineKeyboardMarkup(
+        [buttons[index:index + 2] for index in range(0, len(buttons), 2)]
+    ))
+
+
+async def handle_genre(update, context):
+    query = update.callback_query
+    state = state_for(update, context)
+    words = TEXT[locale(state)]
+    choice = query.data.split(":", 1)[1]
+    if choice == "retry":
+        retry = state.get("genre_retry")
+        if not retry or retry[0] != (query.message.chat_id, query.message.message_id):
+            await query.answer(words["stale"])
+            return
+        _, genre, pending, previous = retry
+    else:
+        index = int(choice)
+        if index >= len(GENRES):
+            await query.answer(words["stale"])
+            return
+        genre, pending, previous = list(GENRES)[index], None, None
+    await query.answer()
+    await suggest_anime(update, context, genre=genre, pending=pending, previous=previous)
+
+
+async def suggest_anime(update, context, genre=None, pending=None, previous=None):
     state = state_for(update, context)
     message = update.effective_message
     if state.get("language") not in TEXT:
@@ -582,24 +743,40 @@ async def suggest_anime(update, context):
         await message.reply_text(words["busy"])
         return
     state["suggestion_busy"] = True
+    state.pop("genre_retry", None)
     progress = None
     try:
         progress = await message.reply_text(words["loading"])
         async with aiohttp.ClientSession() as session:
-            pool = await fetch_anime_data(session)
-            choices = [item for item in pool if item["id"] not in state["seen_anime"] and item["id"] not in state["shown_anime"]]
+            preferences = get_store().preferences(update.effective_user.id)
+            if genre:
+                preferences["genre"] = genre
+            if any(preferences.values()):
+                pool, _ = await fetch_catalog(session, mode="trending", preferences=preferences, per_page=50)
+            else:
+                pool = await fetch_anime_data(session)
+            eligible = [item for item in pool if item["id"] not in state["seen_anime"] and item["id"] != previous]
+            choices = [item for item in eligible if item["id"] not in state["shown_anime"]]
             if not choices:
-                choices = [item for item in pool if item["id"] not in state["seen_anime"]]
-                if choices:
+                choices = eligible
+                if choices and not genre:
                     state["shown_anime"].clear()
                     get_store().reset_shown(update.effective_user.id)
             if not choices:
-                await progress.edit_text(words["empty"] if pool else words["unavailable"])
+                if genre:
+                    label = GENRES[genre] if language == "fa" else genre
+                    await progress.edit_text(words["genre_empty"].format(genre=label))
+                else:
+                    await progress.edit_text(words["empty"] if pool else words["no_results"])
                 return
-            pending = state.get("retry_anime")
+            if not genre:
+                pending = state.get("retry_anime")
             anime = next((item for item in choices if item["id"] == pending), None) or random.choice(choices)
-            state["retry_anime"] = anime["id"]
+            pending = anime["id"]
+            if not genre:
+                state["retry_anime"] = pending
             await deliver_anime(update, context, session, anime, language)
+            state["active_genre"] = genre
         try:
             await progress.delete()
         except TelegramError:
@@ -608,7 +785,11 @@ async def suggest_anime(update, context):
         key = "translation_failed" if isinstance(exc, TranslationUnavailable) else "photo_failed" if isinstance(exc, CoverUnavailable) else "unavailable"
         logger.warning("Suggestion failed (%s)", type(exc).__name__)
         if progress:
-            await progress.edit_text(words[key], reply_markup=retry_keyboard(language))
+            markup = retry_keyboard(language)
+            if genre:
+                state["genre_retry"] = ((message.chat_id, progress.message_id), genre, pending, previous)
+                markup = InlineKeyboardMarkup([[InlineKeyboardButton(words["retry"], callback_data="genre:retry")]])
+            await progress.edit_text(words[key], reply_markup=markup)
         else:
             await message.reply_text(words[key], reply_markup=menu(language))
     finally:
@@ -705,8 +886,10 @@ async def handle_feedback(update, context):
         await query.answer(words["busy"])
         return
     state["feedback_busy"] = True
+    genre = None
     if state.get("active_suggestion") == active:
         state.pop("active_suggestion", None)
+        genre = state.pop("active_genre", None)
     state.get("related_cards", {}).pop(active, None)
     try:
         if action == "unseen" and not get_store().save_for_later(update.effective_user.id, anime_id):
@@ -720,7 +903,10 @@ async def handle_feedback(update, context):
             state["seen_anime"].add(anime_id)
             get_store().record(update.effective_user.id, anime_id, "seen")
         if action in {"seen", "next"}:
-            await suggest_anime(update, context)
+            if genre:
+                await suggest_anime(update, context, genre=genre, previous=anime_id)
+            else:
+                await suggest_anime(update, context)
         else:
             await query.message.reply_text(words["saved"], reply_markup=menu(language))
     finally:
@@ -790,17 +976,314 @@ async def help_command(update, context):
         await update.effective_message.reply_text(TEXT[locale(state)]["help"], reply_markup=menu(locale(state)))
 
 
+def title_for(item, language):
+    return clean_text((item.get("english_title") if language == "en" else None) or item.get("title") or str(item["id"]))
+
+
+async def edit_text(query, text, markup):
+    try:
+        await query.edit_message_text(text, reply_markup=markup, parse_mode=None)
+    except BadRequest as error:
+        if "message is not modified" not in str(error).lower():
+            raise
+
+
+async def search_command(update, context):
+    state = state_for(update, context)
+    if state.get("language") not in TEXT:
+        await choose_language(update.effective_message)
+        return
+    search = " ".join(getattr(context, "args", []) or [])
+    if search:
+        await show_catalog(update, context, "search", search)
+    else:
+        state["awaiting_search"] = True
+        await update.effective_message.reply_text(TEXT[locale(state)]["search_prompt"])
+
+
+async def cancel_command(update, context):
+    state = state_for(update, context)
+    state.pop("awaiting_search", None)
+    await update.effective_message.reply_text(TEXT[locale(state)]["cancelled"], reply_markup=menu(locale(state)))
+
+
+async def top_command(update, context):
+    await show_catalog(update, context, "top")
+
+
+async def airing_command(update, context):
+    await show_catalog(update, context, "airing")
+
+
+async def show_catalog(update, context, mode, search=None, page=1, token=None):
+    state = state_for(update, context)
+    words = TEXT[locale(state)]
+    query = getattr(update, "callback_query", None) if token else None
+    if state.get("language") not in TEXT:
+        await choose_language(update.effective_message)
+        return
+    if search is not None and not 2 <= len(search.strip()) <= 100:
+        await update.effective_message.reply_text(words["search_short"])
+        return
+    if state.get("suggestion_busy"):
+        if query:
+            await query.answer(words["busy"])
+        else:
+            await update.effective_message.reply_text(words["busy"])
+        return
+    state["suggestion_busy"] = True
+    progress = None
+    try:
+        if query:
+            await query.answer()
+        else:
+            progress = await update.effective_message.reply_text(words["discover_loading"])
+        async with aiohttp.ClientSession() as session:
+            items, has_next = await fetch_catalog(session, mode, search, page,
+                                                  get_store().preferences(update.effective_user.id))
+        token = token or secrets.token_hex(4)
+        label = search if mode == "search" else words[mode]
+        text = words["results"].format(title=label, page=page) if items else words["no_results"]
+        buttons = []
+        for item in items:
+            badge = "✅ " if item["id"] in state["seen_anime"] else ""
+            score = f" · ⭐ {item['score']:.1f}" if item.get("score") is not None else ""
+            buttons.append([InlineKeyboardButton(badge + truncate(title_for(item, locale(state)), 65) + score,
+                                                callback_data=f"disc:open:{token}:{item['id']}")])
+        navigation = []
+        if page > 1:
+            navigation.append(InlineKeyboardButton(words["previous_page"], callback_data=f"disc:page:{token}:{page - 1}"))
+        if has_next and page < 100:
+            navigation.append(InlineKeyboardButton(words["next_page"], callback_data=f"disc:page:{token}:{page + 1}"))
+        if navigation:
+            buttons.append(navigation)
+        markup = InlineKeyboardMarkup(buttons)
+        if query:
+            await edit_text(query, text, markup)
+            message = query.message
+        else:
+            await progress.edit_text(text, reply_markup=markup, parse_mode=None)
+            message = progress
+        remember_message(state, "catalogs", token, {"mode": mode, "search": search, "page": page,
+                         "has_next": has_next, "items": {item["id"]: item for item in items},
+                         "message": (update.effective_message.chat_id, message.message_id)}, limit=20)
+        state.pop("awaiting_search", None)
+    except (aiohttp.ClientError, asyncio.TimeoutError, TelegramError, ValueError, KeyError) as exc:
+        logger.warning("Catalog failed (%s)", type(exc).__name__)
+        if progress:
+            await progress.edit_text(words["unavailable"])
+        else:
+            await update.effective_message.reply_text(words["unavailable"])
+    finally:
+        state["suggestion_busy"] = False
+
+
+async def handle_catalog(update, context):
+    state = state_for(update, context)
+    query = update.callback_query
+    _, action, token, raw_value = query.data.split(":")
+    value = int(raw_value)
+    catalog = state.get("catalogs", {}).get(token)
+    words = TEXT[locale(state)]
+    if not catalog or catalog["message"] != (query.message.chat_id, query.message.message_id):
+        await query.answer(words["stale"])
+        return
+    if action == "page":
+        valid = value == catalog["page"] - 1 or (value == catalog["page"] + 1 and catalog["has_next"])
+        if not valid or not 1 <= value <= 100:
+            await query.answer(words["stale"])
+            return
+        await show_catalog(update, context, catalog["mode"], catalog["search"], value, token)
+        return
+    anime = catalog["items"].get(value)
+    if not anime:
+        await query.answer(words["stale"])
+        return
+    if state.get("suggestion_busy"):
+        await query.answer(words["busy"])
+        return
+    state["suggestion_busy"] = True
+    try:
+        await query.answer()
+        async with aiohttp.ClientSession() as session:
+            # Independent cards keep earlier search results and recommendation buttons usable.
+            await deliver_anime(update, context, session, anime, locale(state), related=True)
+    except (TranslationUnavailable, CoverUnavailable, aiohttp.ClientError, asyncio.TimeoutError, TelegramError, ValueError, KeyError) as exc:
+        key = "translation_failed" if isinstance(exc, TranslationUnavailable) else "photo_failed" if isinstance(exc, CoverUnavailable) else "unavailable"
+        logger.warning("Catalog card failed (%s)", type(exc).__name__)
+        await query.message.reply_text(words[key])
+    finally:
+        state["suggestion_busy"] = False
+
+
+def preferences_view(user_id, language):
+    words = TEXT[language]
+    prefs = get_store().preferences(user_id)
+    genre = prefs["genre"]
+    text = words["preferences"].format(genre=(GENRES.get(genre, genre) if language == "fa" else genre) or words["any"],
+        score=f"{prefs['min_score'] / 10:g}/10" if prefs["min_score"] else words["any"],
+        episodes=prefs["max_episodes"] or words["any"])
+    buttons = [[InlineKeyboardButton(words["genre"], callback_data="pref:genre:choose")]]
+    for field, label, values in (("min_score", "rating", (0, 70, 80, 90)), ("max_episodes", "length", (0, 12, 24, 50))):
+        buttons.append([InlineKeyboardButton(("✓ " if prefs[field] == value else "") +
+            (words["any"] if not value else (f"{value / 10:g}⭐" if field == "min_score" else f"{value} 📺")),
+            callback_data=f"pref:{field}:{value}") for value in values])
+    buttons.append([InlineKeyboardButton(words["reset"], callback_data="pref:reset:0"),
+                    InlineKeyboardButton(words["done"], callback_data="pref:done:0")])
+    return text, InlineKeyboardMarkup(buttons)
+
+
+async def settings_command(update, context):
+    state = state_for(update, context)
+    if state.get("language") not in TEXT:
+        await choose_language(update.effective_message)
+        return
+    state.pop("awaiting_search", None)
+    text, markup = preferences_view(update.effective_user.id, locale(state))
+    sent = await update.effective_message.reply_text(text, reply_markup=markup)
+    remember_message(state, "settings_controls", (update.effective_message.chat_id, sent.message_id), True, limit=10)
+
+
+async def handle_preferences(update, context):
+    state = state_for(update, context)
+    query = update.callback_query
+    words = TEXT[locale(state)]
+    if (query.message.chat_id, query.message.message_id) not in state.get("settings_controls", {}):
+        await query.answer(words["stale"])
+        return
+    if state.get("suggestion_busy"):
+        await query.answer(words["busy"])
+        return
+    _, field, value = query.data.split(":")
+    await query.answer()
+    if field == "genre" and value == "choose":
+        choices = [(words["any"], "any")] + [(GENRES[g] if locale(state) == "fa" else g, str(i)) for i, g in enumerate(GENRES)]
+        buttons = [[InlineKeyboardButton(label, callback_data=f"pref:genre:{key}") for label, key in choices[i:i + 2]]
+                   for i in range(0, len(choices), 2)]
+        await edit_text(query, words["genre"], InlineKeyboardMarkup(buttons))
+        return
+    user_id = update.effective_user.id
+    if field == "reset":
+        for name, default in (("genre", None), ("min_score", 0), ("max_episodes", 0)):
+            get_store().set_preference(user_id, name, default)
+    elif field == "genre" and (value == "any" or (value.isdigit() and int(value) < len(GENRES))):
+        get_store().set_preference(user_id, field, None if value == "any" else list(GENRES)[int(value)])
+    elif field in {"min_score", "max_episodes"} and value.isdigit():
+        allowed = {0, 70, 80, 90} if field == "min_score" else {0, 12, 24, 50}
+        if int(value) not in allowed:
+            return
+        get_store().set_preference(user_id, field, int(value))
+    elif field == "done":
+        await query.edit_message_reply_markup(reply_markup=None)
+        await query.message.reply_text(words["done"], reply_markup=menu(locale(state)))
+        return
+    else:
+        return
+    state.pop("retry_anime", None)
+    text, markup = preferences_view(user_id, locale(state))
+    await edit_text(query, text, markup)
+
+
+def history_page(user_id, language, page=0):
+    words = TEXT[language]
+    items = get_store().watched(user_id)
+    if not items:
+        return words["history_empty"], InlineKeyboardMarkup([])
+    pages = (len(items) + 7) // 8
+    page = max(0, min(page, pages - 1))
+    lines = [words["history_heading"].format(page=page + 1, pages=pages)]
+    buttons = []
+    for number, (anime_id, title, english) in enumerate(items[page * 8:page * 8 + 8], start=page * 8 + 1):
+        lines.append(f"{number}. {truncate(clean_text((english if language == 'en' else None) or title or str(anime_id)), 140)}")
+        buttons.append([InlineKeyboardButton(f"{number} · {words['undo']}", callback_data=f"hist:undo:{anime_id}:{page}")])
+    nav = []
+    if page:
+        nav.append(InlineKeyboardButton(words["previous_page"], callback_data=f"hist:page:{page - 1}"))
+    if page + 1 < pages:
+        nav.append(InlineKeyboardButton(words["next_page"], callback_data=f"hist:page:{page + 1}"))
+    if nav:
+        buttons.append(nav)
+    return "\n\n".join(lines), InlineKeyboardMarkup(buttons)
+
+
+async def history_command(update, context):
+    state = state_for(update, context)
+    if state.get("language") not in TEXT:
+        await choose_language(update.effective_message)
+        return
+    text, markup = history_page(update.effective_user.id, locale(state))
+    sent = await update.effective_message.reply_text(text, reply_markup=markup, parse_mode=None)
+    remember_message(state, "history_controls", (update.effective_message.chat_id, sent.message_id), True, limit=10)
+
+
+async def handle_history(update, context):
+    state = state_for(update, context)
+    query = update.callback_query
+    if (query.message.chat_id, query.message.message_id) not in state.get("history_controls", {}):
+        await query.answer(TEXT[locale(state)]["stale"])
+        return
+    parts = query.data.split(":")
+    if parts[1] == "undo":
+        anime_id = int(parts[2])
+        if get_store().undo_seen(update.effective_user.id, anime_id):
+            state["seen_anime"].discard(anime_id)
+    await query.answer()
+    text, markup = history_page(update.effective_user.id, locale(state), int(parts[-1]))
+    await edit_text(query, text, markup)
+
+
+async def stats_command(update, context):
+    state = state_for(update, context)
+    if state.get("language") not in TEXT:
+        await choose_language(update.effective_message)
+        return
+    words = TEXT[locale(state)]
+    data = get_store().load_user(update.effective_user.id)
+    text = words["profile"].format(seen=len(data["seen_anime"]), shown=len(data["shown_anime"]),
+                                   saved=len(get_store().saved_anime(update.effective_user.id)))
+    await update.effective_message.reply_text(text, reply_markup=menu(locale(state)))
+
+
+async def export_command(update, context):
+    state = state_for(update, context)
+    if state.get("language") not in TEXT:
+        await choose_language(update.effective_message)
+        return
+    user_id = update.effective_user.id
+    store = get_store()
+    def entries(rows):
+        return [dict(zip(("id", "title", "english_title"), row)) for row in rows]
+    data = {"version": 1, "language": locale(state), "preferences": store.preferences(user_id),
+            "watchlist": entries(store.saved_anime(user_id)), "watched": entries(store.watched(user_id))}
+    document = InputFile(json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8"), filename="my-anime-lists.json")
+    await update.effective_message.reply_document(document, caption=TEXT[locale(state)]["export_caption"])
+
+
 async def handle_text(update, context):
-    state_for(update, context)
+    state = state_for(update, context)
     text = re.sub(r"\s+", " ", update.effective_message.text.replace("\u200c", " ").strip())
+    actions = {"search": search_command, "genre_pick": genre_command, "top": top_command, "airing": airing_command,
+               "settings": settings_command, "history": history_command, "stats": stats_command}
+    for key, handler in actions.items():
+        if text in {re.sub(r"\s+", " ", TEXT[lang][key].replace("\u200c", " ")) for lang in TEXT}:
+            state.pop("awaiting_search", None)
+            if key == "search":
+                state["awaiting_search"] = True
+                await update.effective_message.reply_text(TEXT[locale(state)]["search_prompt"])
+            else:
+                await handler(update, context)
+            return
     if text in {TEXT["fa"]["language"], TEXT["en"]["language"], "🌐 زبان / Language"}:
+        state.pop("awaiting_search", None)
         await choose_language(update.effective_message)
     elif text in {TEXT["fa"]["suggest"], TEXT["en"]["suggest"], "چی ببینم", "چی ببینم؟", "چی ببینم?", "What should I watch?"}:
+        state.pop("awaiting_search", None)
         await suggest_anime(update, context)
     elif text in {TEXT["fa"]["watchlist"], TEXT["en"]["watchlist"]}:
+        state.pop("awaiting_search", None)
         await show_watchlist(update, context)
     else:
-        await help_command(update, context)
+        await show_catalog(update, context, "search", text)
 
 
 async def language_command(update, context):
@@ -819,10 +1302,29 @@ async def on_error(update, context):
             pass
 
 
+async def register_commands(app):
+    descriptions = {
+        "en": {"start": "Start and choose language", "suggest": "Get a recommendation", "search": "Search by anime title",
+               "genre": "Pick a genre for a random anime", "top": "Browse top-rated anime", "airing": "Browse anime airing now", "settings": "Set genre, rating and length",
+               "watchlist": "Your watch-later list", "history": "Watched anime and undo", "stats": "Your anime stats",
+               "export": "Download your anime lists", "language": "Change language", "cancel": "Cancel search", "help": "Show help"},
+        "fa": {"start": "شروع و انتخاب زبان", "suggest": "پیشنهاد انیمه", "search": "جستجوی اسم انیمه", "top": "انیمه‌های برتر",
+               "genre": "پیشنهاد تصادفی بر اساس ژانر", "airing": "انیمه‌های در حال پخش", "settings": "تنظیم ژانر، امتیاز و تعداد قسمت", "watchlist": "لیست تماشای من",
+               "history": "دیده‌شده‌ها و لغو ثبت", "stats": "آمار من", "export": "دانلود لیست‌ها", "language": "تغییر زبان",
+               "cancel": "خروج از جستجو", "help": "راهنما"},
+    }
+    for language_code in (None, "fa", "en"):
+        values = descriptions[language_code or "en"]
+        try:
+            await app.bot.set_my_commands([BotCommand(command, label) for command, label in values.items()], language_code=language_code)
+        except TelegramError as exc:
+            logger.warning("Command menu registration failed (%s)", type(exc).__name__)
+
+
 def build_application():
     if not TOKEN:
         raise ValueError("Set TELEGRAM_BOT_TOKEN in AnimeBot/.env")
-    builder = (Application.builder().token(TOKEN).concurrent_updates(16)
+    builder = (Application.builder().token(TOKEN).concurrent_updates(16).post_init(register_commands)
                .connect_timeout(20).read_timeout(40).write_timeout(40)
                .get_updates_connect_timeout(20).get_updates_read_timeout(40))
     proxy = os.getenv("TELEGRAM_PROXY_URL", "").strip()
@@ -835,6 +1337,14 @@ def build_application():
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("suggest", suggest_anime))
     app.add_handler(CommandHandler("watchlist", show_watchlist))
+    for command, handler in {"search": search_command, "genre": genre_command, "top": top_command, "airing": airing_command,
+                             "settings": settings_command, "history": history_command, "stats": stats_command,
+                             "export": export_command, "cancel": cancel_command}.items():
+        app.add_handler(CommandHandler(command, handler))
+    app.add_handler(CallbackQueryHandler(handle_genre, pattern=r"^genre:(?:[0-9]{1,2}|retry)$"))
+    app.add_handler(CallbackQueryHandler(handle_catalog, pattern=r"^disc:(?:open|page):[0-9a-f]{8}:\d+$"))
+    app.add_handler(CallbackQueryHandler(handle_preferences, pattern=r"^pref:(?:genre|min_score|max_episodes|reset|done):[a-z0-9]+$"))
+    app.add_handler(CallbackQueryHandler(handle_history, pattern=r"^hist:(?:page:\d+|undo:\d+:\d+)$"))
     app.add_handler(CallbackQueryHandler(handle_watchlist, pattern=r"^wl:(?:page:\d+|(?:seen|remove):\d+:\d+)$"))
     app.add_handler(CallbackQueryHandler(set_language, pattern=r"^lang:(fa|en)$"))
     app.add_handler(CallbackQueryHandler(show_related, pattern=r"^related(?:more)?:\d+$"))
