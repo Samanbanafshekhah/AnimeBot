@@ -143,98 +143,127 @@ class CoverUnavailable(Exception):
 
 class Store:
     """Keep preferences, watched history and translations across restarts."""
-    def __init__(self, path):
-        self.db = sqlite3.connect(path)
-        self.db.executescript("""
-            CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, language TEXT NOT NULL);
+    def __init__(self, path, database_url=None):
+        if database_url:
+            from postgres_store import PostgresConnection
+            self.db = PostgresConnection(database_url)
+            saved_at = "BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT)"
+            watchlist_order_column = ", save_order BIGINT GENERATED ALWAYS AS IDENTITY"
+            self.watchlist_order = "w.save_order"
+        else:
+            self.db = sqlite3.connect(path)
+            saved_at = "BIGINT NOT NULL DEFAULT (unixepoch())"
+            watchlist_order_column = ""
+            self.watchlist_order = "w.rowid"
+        schema = f"""
+            CREATE TABLE IF NOT EXISTS users (id BIGINT NOT NULL PRIMARY KEY, language TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS history (
-                user_id INTEGER NOT NULL, anime_id INTEGER NOT NULL, status TEXT NOT NULL,
+                user_id BIGINT NOT NULL, anime_id INTEGER NOT NULL, status TEXT NOT NULL,
                 PRIMARY KEY (user_id, anime_id));
             CREATE TABLE IF NOT EXISTS translations (source_hash TEXT PRIMARY KEY, text TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS anime_titles (
                 anime_id INTEGER PRIMARY KEY, title TEXT NOT NULL, english_title TEXT);
             CREATE TABLE IF NOT EXISTS watchlist (
-                user_id INTEGER NOT NULL, anime_id INTEGER NOT NULL,
-                saved_at INTEGER NOT NULL DEFAULT (unixepoch()), PRIMARY KEY (user_id, anime_id));
+                user_id BIGINT NOT NULL, anime_id INTEGER NOT NULL,
+                saved_at {saved_at}{watchlist_order_column}, PRIMARY KEY (user_id, anime_id));
             CREATE TABLE IF NOT EXISTS preferences (
-                user_id INTEGER PRIMARY KEY, genre TEXT, min_score INTEGER NOT NULL DEFAULT 0,
+                user_id BIGINT NOT NULL PRIMARY KEY, genre TEXT, min_score INTEGER NOT NULL DEFAULT 0,
                 max_episodes INTEGER NOT NULL DEFAULT 0);
-        """)
+        """
+        with self.transaction():
+            for statement in schema.split(";"):
+                if statement.strip():
+                    self.db.execute(statement)
+
+    def transaction(self):
+        return self.db.transaction() if self.watchlist_order == "w.save_order" else self.db
 
     def load_user(self, user_id):
-        row = self.db.execute("SELECT language FROM users WHERE id=?", (user_id,)).fetchone()
-        history = self.db.execute("SELECT anime_id,status FROM history WHERE user_id=?", (user_id,)).fetchall()
+        with self.transaction():
+            row = self.db.execute("SELECT language FROM users WHERE id=?", (user_id,)).fetchone()
+            history = self.db.execute("SELECT anime_id,status FROM history WHERE user_id=?", (user_id,)).fetchall()
         return {"language": row[0] if row else None,
                 "shown_anime": {anime_id for anime_id, _ in history},
                 "seen_anime": {anime_id for anime_id, status in history if status == "seen"}}
 
     def language(self, user_id, language):
-        with self.db:
-            self.db.execute("INSERT OR REPLACE INTO users VALUES (?,?)", (user_id, language))
+        with self.transaction():
+            self.db.execute("INSERT INTO users VALUES (?,?) ON CONFLICT(id) "
+                            "DO UPDATE SET language=excluded.language", (user_id, language))
 
     def record(self, user_id, anime_id, status):
-        with self.db:
-            self.db.execute("INSERT INTO history VALUES (?,?,?) ON CONFLICT(user_id,anime_id) "
-                            "DO UPDATE SET status=CASE WHEN history.status='seen' THEN 'seen' ELSE excluded.status END",
-                            (user_id, anime_id, status))
-            if status == "seen":
-                self.db.execute("DELETE FROM watchlist WHERE user_id=? AND anime_id=?", (user_id, anime_id))
+        with self.transaction():
+            self._record(user_id, anime_id, status)
+
+    def _record(self, user_id, anime_id, status):
+        self.db.execute("INSERT INTO history VALUES (?,?,?) ON CONFLICT(user_id,anime_id) "
+                        "DO UPDATE SET status=CASE WHEN history.status='seen' THEN 'seen' ELSE excluded.status END",
+                        (user_id, anime_id, status))
+        if status == "seen":
+            self.db.execute("DELETE FROM watchlist WHERE user_id=? AND anime_id=?", (user_id, anime_id))
 
     def remember_anime(self, anime):
-        with self.db:
-            self.db.execute("INSERT OR REPLACE INTO anime_titles VALUES (?,?,?)",
+        with self.transaction():
+            self.db.execute("INSERT INTO anime_titles VALUES (?,?,?) ON CONFLICT(anime_id) "
+                            "DO UPDATE SET title=excluded.title, english_title=excluded.english_title",
                             (anime["id"], anime.get("title") or str(anime["id"]), anime.get("english_title")))
 
     def save_for_later(self, user_id, anime_id):
-        with self.db:
-            self.db.execute("INSERT OR IGNORE INTO watchlist (user_id,anime_id) "
+        with self.transaction():
+            self.db.execute("INSERT INTO watchlist (user_id,anime_id) "
                             "SELECT ?,anime_id FROM anime_titles WHERE anime_id=? "
-                            "AND NOT EXISTS (SELECT 1 FROM history WHERE user_id=? AND anime_id=? AND status='seen')",
+                            "AND NOT EXISTS (SELECT 1 FROM history WHERE user_id=? AND anime_id=? AND status='seen') "
+                            "ON CONFLICT(user_id,anime_id) DO NOTHING",
                             (user_id, anime_id, user_id, anime_id))
-        return self.db.execute("SELECT 1 FROM watchlist WHERE user_id=? AND anime_id=?", (user_id, anime_id)).fetchone() is not None
+            return self.db.execute("SELECT 1 FROM watchlist WHERE user_id=? AND anime_id=?", (user_id, anime_id)).fetchone() is not None
 
     def saved_anime(self, user_id):
-        return self.db.execute("SELECT w.anime_id,a.title,a.english_title FROM watchlist w "
-                               "JOIN anime_titles a ON a.anime_id=w.anime_id WHERE w.user_id=? "
-                               "ORDER BY w.saved_at DESC,w.rowid DESC", (user_id,)).fetchall()
+        with self.transaction():
+            return self.db.execute("SELECT w.anime_id,a.title,a.english_title FROM watchlist w "
+                                   "JOIN anime_titles a ON a.anime_id=w.anime_id WHERE w.user_id=? "
+                                   f"ORDER BY w.saved_at DESC,{self.watchlist_order} DESC", (user_id,)).fetchall()
 
     def remove_saved(self, user_id, anime_id, seen=False):
-        with self.db:
+        with self.transaction():
             removed = self.db.execute("DELETE FROM watchlist WHERE user_id=? AND anime_id=?", (user_id, anime_id)).rowcount
             if removed and seen:
-                self.record(user_id, anime_id, "seen")
+                self._record(user_id, anime_id, "seen")
         return bool(removed)
 
     def reset_shown(self, user_id):
-        with self.db:
+        with self.transaction():
             self.db.execute("DELETE FROM history WHERE user_id=? AND status!='seen'", (user_id,))
 
     def translation(self, source_hash):
-        row = self.db.execute("SELECT text FROM translations WHERE source_hash=?", (source_hash,)).fetchone()
+        with self.transaction():
+            row = self.db.execute("SELECT text FROM translations WHERE source_hash=?", (source_hash,)).fetchone()
         return row[0] if row else None
 
     def save_translation(self, source_hash, text):
-        with self.db:
-            self.db.execute("INSERT OR REPLACE INTO translations VALUES (?,?)", (source_hash, text))
+        with self.transaction():
+            self.db.execute("INSERT INTO translations VALUES (?,?) ON CONFLICT(source_hash) "
+                            "DO UPDATE SET text=excluded.text", (source_hash, text))
 
     def preferences(self, user_id):
-        row = self.db.execute("SELECT genre,min_score,max_episodes FROM preferences WHERE user_id=?", (user_id,)).fetchone()
+        with self.transaction():
+            row = self.db.execute("SELECT genre,min_score,max_episodes FROM preferences WHERE user_id=?", (user_id,)).fetchone()
         return dict(zip(("genre", "min_score", "max_episodes"), row or (None, 0, 0)))
 
     def set_preference(self, user_id, field, value):
         if field not in {"genre", "min_score", "max_episodes"}:
             raise ValueError("Unknown preference")
-        with self.db:
-            self.db.execute("INSERT OR IGNORE INTO preferences(user_id) VALUES (?)", (user_id,))
+        with self.transaction():
+            self.db.execute("INSERT INTO preferences(user_id) VALUES (?) ON CONFLICT(user_id) DO NOTHING", (user_id,))
             self.db.execute(f"UPDATE preferences SET {field}=? WHERE user_id=?", (value, user_id))
 
     def watched(self, user_id):
-        return self.db.execute("SELECT h.anime_id,a.title,a.english_title FROM history h "
-                               "LEFT JOIN anime_titles a ON a.anime_id=h.anime_id "
-                               "WHERE h.user_id=? AND h.status='seen' ORDER BY h.anime_id DESC", (user_id,)).fetchall()
+        with self.transaction():
+            return self.db.execute("SELECT h.anime_id,a.title,a.english_title FROM history h "
+                                   "LEFT JOIN anime_titles a ON a.anime_id=h.anime_id "
+                                   "WHERE h.user_id=? AND h.status='seen' ORDER BY h.anime_id DESC", (user_id,)).fetchall()
 
     def undo_seen(self, user_id, anime_id):
-        with self.db:
+        with self.transaction():
             return bool(self.db.execute("UPDATE history SET status='shown' WHERE user_id=? AND anime_id=? AND status='seen'",
                                         (user_id, anime_id)).rowcount)
 
@@ -251,7 +280,7 @@ _translation_cooldowns = {}
 def get_store():
     global _store
     if _store is None:
-        _store = Store(BASE_DIR / "animebot.sqlite3")
+        _store = Store(BASE_DIR / "animebot.sqlite3", os.getenv("DATABASE_URL"))
     return _store
 
 
@@ -1355,10 +1384,21 @@ def build_application():
 
 
 def main():
+    webhook_url = os.getenv("RENDER_EXTERNAL_URL")
+    webhook_secret = os.getenv("TELEGRAM_WEBHOOK_SECRET")
+    if webhook_url and (not os.getenv("DATABASE_URL") or not webhook_secret
+                        or not re.fullmatch(r"[A-Za-z0-9_-]{32,256}", webhook_secret)):
+        raise SystemExit("Render requires DATABASE_URL and a 32–256 character TELEGRAM_WEBHOOK_SECRET.")
     get_store()
     app = build_application()
     logger.info("Anime bot starting")
-    app.run_polling(allowed_updates=["message", "callback_query"], bootstrap_retries=3)
+    allowed_updates = ["message", "callback_query"]
+    if webhook_url:
+        app.run_webhook(listen="0.0.0.0", port=int(os.environ["PORT"]), url_path="telegram",
+                        webhook_url=f"{webhook_url.rstrip('/')}/telegram", secret_token=webhook_secret,
+                        allowed_updates=allowed_updates, bootstrap_retries=3)
+    else:
+        app.run_polling(allowed_updates=allowed_updates, bootstrap_retries=3)
 
 
 if __name__ == "__main__":

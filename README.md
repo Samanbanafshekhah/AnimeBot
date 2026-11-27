@@ -36,6 +36,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\bot.ps1 status
 
 Logs are in `bot.stderr.log` and `bot.stdout.log`. The computer must stay awake and connected. The scripts do not configure startup at Windows sign-in. Send `/help` to refresh an existing Telegram keyboard.
 
+## Render Free deployment
+
+Use a Python web service with build command `pip install -r requirements.txt` and start command `python -u animeSuggest.py`. Leave Health Check Path blank for Render's TCP check. Render supplies `PORT` and `RENDER_EXTERNAL_URL`.
+
+Add `TELEGRAM_BOT_TOKEN`, a TLS-enabled `DATABASE_URL` from a persistent Postgres provider such as Neon, and a random `TELEGRAM_WEBHOOK_SECRET` (32–256 letters, digits, hyphens or underscores). Keep the laptop's proxy settings out of the Render environment. The app registers its Telegram webhook automatically. Render Free sleeps after inactivity, so the first reply can be delayed.
+
+To preserve existing data, stop the local bot at cutover and run `.\.venv\Scripts\python.exe migrate_to_postgres.py` before deploying. The script prompts for the connection string or reads `DATABASE_URL` from the ignored local `.env.render` file. It copies a SQLite snapshot and leaves existing cloud rows intact on re-run. If you return to local polling, suspend the Render service first so both copies cannot claim the same bot.
+
 Run all offline tests:
 
 ```powershell
